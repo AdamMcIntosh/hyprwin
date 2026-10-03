@@ -961,11 +961,8 @@ public sealed class WindowDispatcher
     {
         try
         {
-            // HyprWin runs elevated (requireAdministrator). Browsers and other apps
-            // detect an elevated parent and immediately exit if launched directly via
-            // ShellExecute, causing the "opens and closes instantly" effect.
-            // Routing URLs through explorer.exe (which always runs at medium integrity)
-            // correctly hands off to the default handler at normal privilege level.
+            // HyprWin runs as the logged-in user. Route protocol URLs through explorer.exe
+            // so the default handler still launches correctly.
             bool isUrl = command.IndexOf("://", StringComparison.Ordinal) >= 0
                       || command.EndsWith(":", StringComparison.Ordinal)
                          && !command.Contains('\\') && !command.Contains('/');

@@ -16,7 +16,7 @@ public static class DefaultConfig
 
 # ─────────────────────── General ───────────────────────
 [general]
-workspace_count  = 3           # Number of virtual workspaces per monitor
+workspace_count  = 3           # Number of virtual workspaces per monitor (SUPER+1..N)
 terminal_command = "wt.exe"    # Command to launch terminal (SUPER+RETURN)
 workspace_mode   = "monitor_bound"  # "monitor_bound" = Workspace N maps to Monitor N
                                      # "virtual" = per-monitor virtual desktops (hide/show)
@@ -73,8 +73,7 @@ keys = [
     "WIN+LEFT", "WIN+RIGHT", "WIN+UP", "WIN+DOWN",
     "WIN+D", "WIN+TAB",
     "WIN+1", "WIN+2", "WIN+3",
-    "WIN+S", "WIN+SPACE",
-    "WIN+I"
+    "WIN+S"
 ]
 
 # ─────────────────────── Keys to Passthrough ───────────────────────
@@ -83,7 +82,8 @@ keys = [
 # so programs like Raycast, Run dialog, etc. still work.
 [windows_keys_to_passthrough]
 keys = [
-    "WIN+R"        # Windows Run dialog
+    "WIN+R",       # Windows Run dialog
+    "WIN+SPACE"    # Input language switch
 ]
 
 # ─────────────────────── Animations ───────────────────────

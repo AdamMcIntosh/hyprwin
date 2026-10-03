@@ -114,131 +114,14 @@ public sealed class TilingEngine
     /// New windows split the leaf with the best aspect-ratio match (or largest free space).
     /// </summary>
     public void AddWindow(Workspace workspace, IntPtr hwnd)
-    {
-        if (workspace.LayoutRoot == null)
-        {
-            workspace.LayoutRoot = BspNode.Leaf(hwnd);
-            return;
-        }
-
-        // Find the best leaf to split: prefer the focused window's leaf,
-        // fall back to the leaf with the largest ComputedRect area.
-        var focusedHwnd = workspace.FocusedWindow?.Handle ?? IntPtr.Zero;
-        BspNode? targetLeaf = focusedHwnd != IntPtr.Zero
-            ? workspace.LayoutRoot.FindLeaf(focusedHwnd)
-            : null;
-
-        if (targetLeaf == null)
-        {
-            // Pick the leaf with the largest area — avoid LINQ OrderByDescending allocation
-            long bestArea = -1;
-            foreach (var leaf in workspace.LayoutRoot.GetLeaves())
-            {
-                long area = (long)leaf.ComputedRect.Width * leaf.ComputedRect.Height;
-                if (area > bestArea)
-                {
-                    bestArea = area;
-                    targetLeaf = leaf;
-                }
-            }
-        }
-
-        if (targetLeaf == null)
-        {
-            workspace.LayoutRoot = BspNode.Leaf(hwnd);
-            return;
-        }
-
-        // Choose split direction based on the leaf's computed rect aspect ratio.
-        // Fall back to depth-based alternation if no ComputedRect is set yet.
-        BspNode.SplitDirection direction;
-        var cr = targetLeaf.ComputedRect;
-        if (cr.Width > 0 && cr.Height > 0)
-            direction = cr.Width >= cr.Height
-                ? BspNode.SplitDirection.Horizontal
-                : BspNode.SplitDirection.Vertical;
-        else
-        {
-            int depth = GetNodeDepth(targetLeaf);
-            direction = depth % 2 == 0
-                ? BspNode.SplitDirection.Horizontal
-                : BspNode.SplitDirection.Vertical;
-        }
-
-        var existingLeaf = BspNode.Leaf(targetLeaf.WindowHandle);
-        var newLeaf      = BspNode.Leaf(hwnd);
-        var splitNode    = BspNode.Split(direction, existingLeaf, newLeaf);
-
-        if (targetLeaf.Parent == null)
-        {
-            workspace.LayoutRoot = splitNode;
-        }
-        else
-        {
-            var parent = targetLeaf.Parent;
-            if (parent.First == targetLeaf)
-                parent.First = splitNode;
-            else
-                parent.Second = splitNode;
-            splitNode.Parent = parent;
-        }
-    }
-
-    /// <summary>
-    /// Get the depth of a node in the BSP tree (0 = root).
-    /// </summary>
-    private static int GetNodeDepth(BspNode node)
-    {
-        int depth = 0;
-        var current = node;
-        while (current.Parent != null)
-        {
-            depth++;
-            current = current.Parent;
-        }
-        return depth;
-    }
+        => TilingLayout.Insert(workspace, hwnd);
 
     /// <summary>
     /// Remove a window from a workspace's BSP tree.
     /// The sibling takes over the parent's space.
     /// </summary>
     public void RemoveWindow(Workspace workspace, IntPtr hwnd)
-    {
-        if (workspace.LayoutRoot == null) return;
-
-        var leaf = workspace.LayoutRoot.FindLeaf(hwnd);
-        if (leaf == null) return;
-
-        if (leaf.Parent == null)
-        {
-            // This was the only window (root leaf)
-            workspace.LayoutRoot = null;
-            return;
-        }
-
-        var parent = leaf.Parent;
-        var sibling = parent.First == leaf ? parent.Second : parent.First;
-
-        if (sibling == null) return;
-
-        // Replace parent with sibling
-        if (parent.Parent == null)
-        {
-            // Parent was root
-            workspace.LayoutRoot = sibling;
-            sibling.Parent = null;
-        }
-        else
-        {
-            var grandparent = parent.Parent;
-            if (grandparent.First == parent)
-                grandparent.First = sibling;
-            else
-                grandparent.Second = sibling;
-            sibling.Parent = grandparent;
-        }
-    }
+        => TilingLayout.Close(workspace, hwnd);
 
     /// <summary>
     /// Calculate the layout rectangles for all windows in a workspace,
@@ -290,11 +173,11 @@ public sealed class TilingEngine
         // Calculate layout
         if (workspace.LayoutMode == "master")
         {
-            CalculateMasterLayout(workspace, tilingArea);
+            TilingLayout.CalculateMasterLayout(workspace, tilingArea, _gapsInner);
         }
         else
         {
-            CalculateLayout(workspace.LayoutRoot, tilingArea);
+            TilingLayout.CalculateBspLayout(workspace.LayoutRoot, tilingArea, _gapsInner);
         }
 
         // Build lookup once for O(1) hit per leaf
@@ -363,88 +246,11 @@ public sealed class TilingEngine
         }
     }
 
-    /// <summary>
-    /// Calculate layout in Master/Stack mode:
-    /// One master window on the left, remaining stack windows stacked vertically on the right.
-    /// </summary>
-    private void CalculateMasterLayout(Workspace workspace, NativeMethods.RECT area)
-    {
-        if (workspace.LayoutRoot == null) return;
-        var leaves = workspace.LayoutRoot.GetLeaves().ToList();
-        if (leaves.Count == 0) return;
-
-        if (leaves.Count == 1)
-        {
-            leaves[0].ComputedRect = area;
-            return;
-        }
-
-        double ratio = Math.Clamp(workspace.MasterRatio, 0.2, 0.8);
-
-        int masterWidth = (int)((area.Width - _gapsInner) * ratio);
-        int stackWidth = area.Width - masterWidth - _gapsInner;
-
-        // Master window on the left
-        var masterRect = new NativeMethods.RECT(area.Left, area.Top, area.Left + masterWidth, area.Bottom);
-        leaves[0].ComputedRect = masterRect;
-
-        // Stack windows on the right
-        int stackCount = leaves.Count - 1;
-        int totalStackGaps = (stackCount - 1) * _gapsInner;
-        int availableStackHeight = Math.Max(0, area.Height - totalStackGaps);
-        int slotHeight = availableStackHeight / stackCount;
-
-        int currentY = area.Top;
-        int stackX = area.Left + masterWidth + _gapsInner;
-
-        for (int i = 1; i < leaves.Count; i++)
-        {
-            int h = (i == leaves.Count - 1) ? (area.Bottom - currentY) : slotHeight;
-            leaves[i].ComputedRect = new NativeMethods.RECT(stackX, currentY, stackX + stackWidth, currentY + h);
-            currentY += h + _gapsInner;
-        }
-    }
-
-    /// <summary>
-    /// Toggle between "dwindle" (BSP) and "master" (Master/Stack) layout modes.
-    /// </summary>
     public void ToggleLayout(Workspace workspace)
     {
-        workspace.LayoutMode = workspace.LayoutMode == "master" ? "dwindle" : "master";
+        TilingLayout.ToggleLayout(workspace);
         Logger.Instance.Info($"Workspace {workspace.Id} layout toggled to {workspace.LayoutMode}");
         TileWorkspace(workspace, animate: true);
-    }
-
-    /// <summary>
-    /// Recursively calculate layout rectangles for the BSP tree.
-    /// </summary>
-    private void CalculateLayout(BspNode node, NativeMethods.RECT area)
-    {
-        node.ComputedRect = area;
-
-        if (!node.IsSplit) return;
-        if (node.First == null || node.Second == null) return;
-
-        int halfGap = _gapsInner / 2;
-
-        if (node.Direction == BspNode.SplitDirection.Horizontal)
-        {
-            // Split left/right
-            int splitX = area.Left + (int)(area.Width * node.Ratio);
-            var firstRect = new NativeMethods.RECT(area.Left, area.Top, splitX - halfGap, area.Bottom);
-            var secondRect = new NativeMethods.RECT(splitX + halfGap, area.Top, area.Right, area.Bottom);
-            CalculateLayout(node.First, firstRect);
-            CalculateLayout(node.Second, secondRect);
-        }
-        else
-        {
-            // Split top/bottom
-            int splitY = area.Top + (int)(area.Height * node.Ratio);
-            var firstRect = new NativeMethods.RECT(area.Left, area.Top, area.Right, splitY - halfGap);
-            var secondRect = new NativeMethods.RECT(area.Left, splitY + halfGap, area.Right, area.Bottom);
-            CalculateLayout(node.First, firstRect);
-            CalculateLayout(node.Second, secondRect);
-        }
     }
 
     /// <summary>
@@ -513,18 +319,7 @@ public sealed class TilingEngine
     /// Swap two windows in the BSP tree (for move operations).
     /// </summary>
     public void SwapWindows(Workspace workspace, IntPtr hwnd1, IntPtr hwnd2)
-    {
-        if (workspace.LayoutRoot == null) return;
-
-        var leaf1 = workspace.LayoutRoot.FindLeaf(hwnd1);
-        var leaf2 = workspace.LayoutRoot.FindLeaf(hwnd2);
-
-        if (leaf1 != null && leaf2 != null)
-        {
-            // Simply swap the window handles
-            (leaf1.WindowHandle, leaf2.WindowHandle) = (leaf2.WindowHandle, leaf1.WindowHandle);
-        }
-    }
+        => TilingLayout.Swap(workspace, hwnd1, hwnd2);
 
     /// <summary>
     /// Set the split direction of the focused window's immediate parent BSP node.
@@ -685,12 +480,12 @@ public sealed class TilingEngine
         if (workspace.LayoutRoot == null)
         {
             workspace.LayoutRoot = BspNode.Leaf(validHandles[0]);
-            CalculateLayout(workspace.LayoutRoot, tilingArea);
+            TilingLayout.CalculateBspLayout(workspace.LayoutRoot, tilingArea, _gapsInner);
 
             for (int i = 1; i < validHandles.Count; i++)
             {
                 AddWindow(workspace, validHandles[i]);
-                CalculateLayout(workspace.LayoutRoot, tilingArea);
+                TilingLayout.CalculateBspLayout(workspace.LayoutRoot, tilingArea, _gapsInner);
             }
             return;
         }
@@ -714,11 +509,11 @@ public sealed class TilingEngine
         if (workspace.LayoutRoot == null)
         {
             workspace.LayoutRoot = BspNode.Leaf(validHandles[0]);
-            CalculateLayout(workspace.LayoutRoot, tilingArea);
+            TilingLayout.CalculateBspLayout(workspace.LayoutRoot, tilingArea, _gapsInner);
             for (int i = 1; i < validHandles.Count; i++)
             {
                 AddWindow(workspace, validHandles[i]);
-                CalculateLayout(workspace.LayoutRoot, tilingArea);
+                TilingLayout.CalculateBspLayout(workspace.LayoutRoot, tilingArea, _gapsInner);
             }
             return;
         }
@@ -734,7 +529,7 @@ public sealed class TilingEngine
             {
                 // Pre-compute rects so AddWindow can determine split direction from aspect ratio
                 if (changed || inTree.Count == 0)
-                    CalculateLayout(workspace.LayoutRoot, tilingArea);
+                    TilingLayout.CalculateBspLayout(workspace.LayoutRoot, tilingArea, _gapsInner);
                 AddWindow(workspace, h);
                 changed = true;
                 changed = true;

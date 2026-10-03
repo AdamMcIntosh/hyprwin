@@ -52,16 +52,22 @@ public partial class App : Application
         // Catch unhandled exceptions on the Dispatcher thread and background
         // threads to prevent 0xc000041d (STATUS_FATAL_USER_CALLBACK_EXCEPTION)
         // crashes, especially in VM environments where hardware APIs may fail.
-        DispatcherUnhandledException += (_, args) =>
-        {
-            Logger.Instance.Error("Unhandled dispatcher exception (suppressed)", args.Exception);
-            args.Handled = true; // prevent crash
-        };
-        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
-        {
-            if (args.ExceptionObject is Exception ex)
-                Logger.Instance.Error($"Unhandled AppDomain exception (IsTerminating={args.IsTerminating})", ex);
-        };
+            DispatcherUnhandledException += (_, args) =>
+            {
+                Logger.Instance.Error("Unhandled dispatcher exception (suppressed)", args.Exception);
+                args.Handled = true; // prevent crash
+            };
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            {
+                if (args.ExceptionObject is Exception ex)
+                    Logger.Instance.Error($"Unhandled AppDomain exception (IsTerminating={args.IsTerminating})", ex);
+                if (args.IsTerminating)
+                    TaskbarManager.RestoreExplorerTaskbars();
+            };
+            AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            {
+                TaskbarManager.RestoreExplorerTaskbars();
+            };
         TaskScheduler.UnobservedTaskException += (_, args) =>
         {
             Logger.Instance.Error("Unobserved task exception (suppressed)", args.Exception);
@@ -157,12 +163,10 @@ public partial class App : Application
             _windowRuleEngine = new WindowRuleEngine();
             LoadWindowRules(config);
 
-            // 4a. Hide native taskbar NOW — before enumerating monitors,
-            //     so that Windows' work-area snapshot already reflects the
-            //     hidden state when MonitorManager runs (belt-and-suspenders;
-            //     MonitorManager uses rcMonitor anyway).
+            // 4a. Hide native taskbar only when the custom top bar is enabled.
             _taskbarManager = new TaskbarManager();
-            _taskbarManager.HideTaskbar();
+            if (config.TopBar.Enabled)
+                _taskbarManager.HideTaskbar();
 
             // 4b. Enumerate monitors
             _monitorManager = new MonitorManager();
@@ -327,6 +331,7 @@ public partial class App : Application
             Logger.Instance.Error("Fatal error during startup", ex);
             MessageBox.Show($"HyprWin failed to start:\n{ex.Message}", "HyprWin Error",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+            TaskbarManager.RestoreExplorerTaskbars();
             Shutdown(1);
         }
     }
@@ -362,9 +367,6 @@ public partial class App : Application
             // 4. Restore all managed windows to their original positions & size
             _windowTracker?.RestoreAllWindows();
 
-            // 5. Restore native taskbar (SW_SHOW + WM_SETTINGCHANGE, no Explorer restart)
-            try { _taskbarManager?.Dispose(); } catch { }
-
             // 6. Clean up remaining services
             _touchpadService?.Dispose();
             _sysInfoService?.Dispose();
@@ -379,14 +381,17 @@ public partial class App : Application
         {
             Logger.Instance.Error("Error during shutdown", ex);
         }
+        finally
+        {
+            try { _taskbarManager?.Dispose(); } catch { }
+            TaskbarManager.RestoreExplorerTaskbars();
+        }
 
         Logger.Instance.Info("HyprWin stopped");
         Logger.Instance.Dispose();
 
         base.OnExit(e);
 
-        // Force-terminate the process to kill any lingering background threads
-        // (timers, WinRT async tasks, COM servers, etc.)
         Environment.Exit(e.ApplicationExitCode);
     }
 
@@ -443,15 +448,17 @@ public partial class App : Application
         _keyboardHook.RegisterKeybind(kb.RotateSplitVertical, _dispatcher.RotateSplitVertical);
         _keyboardHook.RegisterKeybind(kb.RotateSplitHorizontal, _dispatcher.RotateSplitHorizontal);
 
-        // Workspaces
-        _keyboardHook.RegisterKeybind(kb.Workspace1, () => _dispatcher.SwitchToWorkspace(0));
-        _keyboardHook.RegisterKeybind(kb.Workspace2, () => _dispatcher.SwitchToWorkspace(1));
-        _keyboardHook.RegisterKeybind(kb.Workspace3, () => _dispatcher.SwitchToWorkspace(2));
-
-        // Move to workspace
-        _keyboardHook.RegisterKeybind(kb.MoveToWs1, () => _dispatcher.MoveToWorkspace(0));
-        _keyboardHook.RegisterKeybind(kb.MoveToWs2, () => _dispatcher.MoveToWorkspace(1));
-        _keyboardHook.RegisterKeybind(kb.MoveToWs3, () => _dispatcher.MoveToWorkspace(2));
+        // Workspaces — SUPER+1..N and SUPER+SHIFT+1..N follow general.workspace_count
+        int wsCount = Math.Max(1, config.General.WorkspaceCount);
+        for (int i = 0; i < wsCount; i++)
+        {
+            string? digit = WorkspaceDigitKey(i);
+            if (digit == null) break;
+            int idx = i;
+            _keyboardHook.RegisterKeybind($"SUPER+{digit}", () => _dispatcher.SwitchToWorkspace(idx));
+            _keyboardHook.RegisterKeybind($"SUPER+SHIFT+{digit}", () => _dispatcher.MoveToWorkspace(idx));
+            _keyboardHook.RegisterSuppression($"WIN+{digit}");
+        }
 
         // Special Workspace & Layout Mode
         _keyboardHook.RegisterKeybind(kb.ToggleSpecialWorkspace, _dispatcher.ToggleSpecialWorkspace);
@@ -481,15 +488,27 @@ public partial class App : Application
             Logger.Instance.Debug($"Auto-floated fullscreen window on create: {window}");
         }
 
+        // Apply window rules (Hyprland windowrule) before workspace insert so float/UWP
+        // windows are never placed in the BSP tree.
+        var result = _windowRuleEngine.Evaluate(window);
+        bool isUwpHost = IsUwpHostedWindow(window);
+        if (isUwpHost)
+        {
+            // ApplicationFrameHost windows match on title/class. Float by default
+            // unless a rule explicitly sets float = false. Do not call SetForegroundWindow.
+            if (result.Float != false)
+                window.IsFloating = true;
+        }
+
+        if (result.Float == true)
+            window.IsFloating = true;
+        else if (result.Float == false)
+            window.IsFloating = false;
+
         _workspaceManager.AddWindowToActiveWorkspace(window);
 
-        // Apply window rules (Hyprland windowrule)
-        if (_windowRuleEngine.HasRules)
-        {
-            var result = _windowRuleEngine.Evaluate(window);
-            if (result.HasAnyEffect)
-                ApplyWindowRuleResult(window, result);
-        }
+        if (result.HasAnyEffect)
+            ApplyWindowRuleResult(window, result);
 
         Logger.Instance.Debug($"New window tiled: {window}");
     }
@@ -596,6 +615,11 @@ public partial class App : Application
 
                 // Sync autostart registry entry
                 AutostartManager.SetEnabled(config.General.Autostart);
+
+                if (config.TopBar.Enabled)
+                    _taskbarManager?.HideTaskbar();
+                else
+                    _taskbarManager?.ShowTaskbar();
 
                 // Update top bars
                 foreach (var bar in _topBarWindows)
@@ -1051,7 +1075,7 @@ public partial class App : Application
             }
 
             // Float (remove from tiling — Hyprland togglefloating)
-            if (result.Float == true)
+            if (result.Float == true && !window.IsFloating)
             {
                 _dispatcher.ToggleFloat();
             }
@@ -1286,6 +1310,24 @@ public partial class App : Application
         });
 
         return tcs.Task;
+    }
+
+    private static string? WorkspaceDigitKey(int zeroBasedIndex)
+    {
+        if (zeroBasedIndex is >= 0 and <= 8) return (zeroBasedIndex + 1).ToString();
+        if (zeroBasedIndex == 9) return "0";
+        return null;
+    }
+
+    private static bool IsUwpHostedWindow(ManagedWindow window)
+    {
+        if (window.ProcessName.Equals("ApplicationFrameHost", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (window.ClassName.Equals("ApplicationFrameWindow", StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (window.ClassName.Equals("Windows.UI.Core.CoreWindow", StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
     }
 
     private static System.Text.RegularExpressions.Regex? ToRegex(string? pattern)

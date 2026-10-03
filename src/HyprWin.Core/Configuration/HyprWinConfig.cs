@@ -90,7 +90,7 @@ public sealed class WindowsKeysToSuppressConfig
         "WIN+LEFT", "WIN+RIGHT", "WIN+UP", "WIN+DOWN",
         "WIN+D", "WIN+TAB",
         "WIN+1", "WIN+2", "WIN+3",
-        "WIN+S", "WIN+SPACE"
+        "WIN+S"
     };
 }
 
@@ -103,7 +103,8 @@ public sealed class WindowsKeysToPassthroughConfig
 {
     public List<string> Keys { get; init; } = new()
     {
-        "WIN+R"
+        "WIN+R",
+        "WIN+SPACE"
     };
 }
 

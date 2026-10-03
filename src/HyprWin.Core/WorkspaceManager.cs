@@ -531,6 +531,8 @@ public sealed class WorkspaceManager
         window.WorkspaceId = -1;
         specialWs.FocusedWindow = window;
 
+        TilingLayout.MoveToScratchpad(currentWs, specialWs, hwnd);
+
         RetileRequested?.Invoke(currentWs);
 
         if (IsSpecialWorkspaceVisible(monIdx))

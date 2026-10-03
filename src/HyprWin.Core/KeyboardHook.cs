@@ -24,6 +24,8 @@ public sealed class KeyboardHook : IDisposable
 
     // Win key staleness detection — prevents _winDown getting stuck in VM/RDP
     private long _lastWinEventTick;
+    // True once a Super+key combo was handled this press; used so a bare Win key still opens Start.
+    private bool _winUsedAsModifier;
 
     // Registered keybind actions: (Modifiers, VKey) -> Action
     private readonly Dictionary<(KeybindParser.Modifiers, int), Action> _keybindActions = new();
@@ -127,8 +129,8 @@ public sealed class KeyboardHook : IDisposable
     }
 
     /// <summary>
-    /// Register a key combo to be passed through to the system (e.g., Win+R for Run).
-    /// Since we suppress the Win key, passthrough combos are re-injected via keybd_event.
+    /// Register a key combo to be passed through to the system (e.g., Win+R for Run, Win+Space).
+    /// Passthrough combos are re-injected via keybd_event so the OS handles them.
     /// </summary>
     public void RegisterPassthrough(string comboStr)
     {
@@ -197,7 +199,10 @@ public sealed class KeyboardHook : IDisposable
         foreach (var key in config.WindowsKeysToPassthrough.Keys)
             RegisterPassthrough(key);
 
-        Logger.Instance.Debug("Win key Start menu suppression enabled");
+        RegisterPassthrough("WIN+R");
+        RegisterPassthrough("WIN+SPACE");
+
+        Logger.Instance.Debug("Win key registered as a modifier (bare Win is not swallowed)");
     }
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
@@ -218,19 +223,27 @@ public sealed class KeyboardHook : IDisposable
                 bool isKeyUp = msg is NativeMethods.WM_KEYUP or NativeMethods.WM_SYSKEYUP;
 
                 // ── Track modifier state ──
+                // The Win key is a modifier only. A bare Win press/release is not swallowed
+                // so the Start menu still works. After a Super+key combo we swallow Win-up
+                // so the leftover Start-menu activation does not fire.
                 if (vk is NativeMethods.VK_LWIN or NativeMethods.VK_RWIN)
                 {
                     _lastWinEventTick = Environment.TickCount64;
                     if (isKeyDown)
                     {
                         _winDown = true;
-                        return (IntPtr)1; // Suppress Win key to prevent Start menu
+                        _winUsedAsModifier = false;
+                        return NativeMethods.CallNextHookEx(_hookId, nCode, wParam, lParam);
                     }
                     else if (isKeyUp)
                     {
+                        bool usedAsModifier = _winUsedAsModifier;
                         _winDown = false;
-                        _heldCombos.Clear(); // All Super+X combos are now invalid
-                        return (IntPtr)1; // Suppress Win key up
+                        _winUsedAsModifier = false;
+                        _heldCombos.Clear();
+                        if (usedAsModifier)
+                            return (IntPtr)1;
+                        return NativeMethods.CallNextHookEx(_hookId, nCode, wParam, lParam);
                     }
                 }
 
@@ -265,6 +278,7 @@ public sealed class KeyboardHook : IDisposable
                     // (passthrough is only the fallback for unbound combos)
                     if (_keybindActions.TryGetValue(comboKey, out var action))
                     {
+                        if (_winDown) _winUsedAsModifier = true;
                         if (_repeatableKeys.Contains(comboKey))
                         {
                             // Repeatable keybind: fire on every OS key-repeat event,
@@ -300,6 +314,7 @@ public sealed class KeyboardHook : IDisposable
                     // 2. Check passthrough combos — re-inject so the system handles them
                     if (_passthroughCombos.Contains(comboKey))
                     {
+                        if (_winDown) _winUsedAsModifier = true;
                         InjectWinCombo(vk, currentMods);
                         return (IntPtr)1; // Suppress the original (injected copy will pass through)
                     }
@@ -307,6 +322,7 @@ public sealed class KeyboardHook : IDisposable
                     // 3. Check suppressed combos
                     if (_suppressedCombos.Contains(comboKey))
                     {
+                        if (_winDown) _winUsedAsModifier = true;
                         return (IntPtr)1; // Suppress
                     }
 
@@ -315,6 +331,7 @@ public sealed class KeyboardHook : IDisposable
                     //    (e.g. arrow keys moving the cursor in an editor while SUPER is held).
                     if (_winDown)
                     {
+                        _winUsedAsModifier = true;
                         return (IntPtr)1;
                     }
                 }

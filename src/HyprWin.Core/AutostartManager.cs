@@ -4,28 +4,21 @@ using Microsoft.Win32;
 namespace HyprWin.Core;
 
 /// <summary>
-/// Manages HyprWin autostart.
-/// Since HyprWin runs elevated (requireAdministrator), Windows silently ignores standard
-/// HKCU\Software\Microsoft\Windows\CurrentVersion\Run entries at user logon.
-/// Autostart is therefore registered via Windows Task Scheduler with HighestAvailable privileges (schtasks.exe),
-/// with the Run registry key maintained as a secondary fallback.
+/// Manages HyprWin autostart via the current-user Run key.
+/// HyprWin runs as the logged-in user (asInvoker), so HKCU Run is the correct path.
 /// </summary>
 public static class AutostartManager
 {
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AppName = "HyprWin";
-    private const string TaskName = "HyprWin";
 
     /// <summary>
-    /// Returns true if HyprWin is registered to start with Windows (either Task Scheduler or Registry).
+    /// Returns true if HyprWin is registered in HKCU\Software\Microsoft\Windows\CurrentVersion\Run.
     /// </summary>
     public static bool IsEnabled()
     {
         try
         {
-            if (IsTaskEnabled())
-                return true;
-
             using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: false);
             return key?.GetValue(AppName) != null;
         }
@@ -36,7 +29,7 @@ public static class AutostartManager
     }
 
     /// <summary>
-    /// Enable autostart: registers an elevated logon task via Task Scheduler and sets the Run registry entry.
+    /// Enable autostart by writing the current executable path to the HKCU Run key.
     /// </summary>
     public static void Enable()
     {
@@ -49,19 +42,8 @@ public static class AutostartManager
                 return;
             }
 
-            // 1. Primary: Register elevated task in Task Scheduler (starts elevated without UAC prompts at logon)
-            bool taskCreated = CreateTask(exePath);
-            if (taskCreated)
-            {
-                Logger.Instance.Info($"Autostart scheduled task created successfully for: {exePath}");
-            }
-            else
-            {
-                Logger.Instance.Warn("Could not create scheduled task, falling back to registry Run key only");
-            }
-
-            // 2. Secondary: Set HKCU Run key as fallback
-            using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
+            using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true)
+                            ?? Registry.CurrentUser.CreateSubKey(RunKey);
             if (key != null)
             {
                 key.SetValue(AppName, $"\"{exePath}\"");
@@ -75,16 +57,12 @@ public static class AutostartManager
     }
 
     /// <summary>
-    /// Disable autostart: removes the scheduled task and the Run registry entry.
+    /// Disable autostart by removing the HKCU Run registry entry.
     /// </summary>
     public static void Disable()
     {
         try
         {
-            // 1. Delete scheduled task
-            DeleteTask();
-
-            // 2. Delete registry entry
             using var key = Registry.CurrentUser.OpenSubKey(RunKey, writable: true);
             if (key?.GetValue(AppName) != null)
             {
@@ -107,47 +85,6 @@ public static class AutostartManager
             Enable();
         else
             Disable();
-    }
-
-    private static bool IsTaskEnabled()
-    {
-        return RunSchtasks($"/query /tn \"{TaskName}\"");
-    }
-
-    private static bool CreateTask(string exePath)
-    {
-        string args = $"/create /tn \"{TaskName}\" /tr \"\\\"{exePath}\\\"\" /sc ONLOGON /rl HIGHEST /f";
-        return RunSchtasks(args);
-    }
-
-    private static bool DeleteTask()
-    {
-        return RunSchtasks($"/delete /tn \"{TaskName}\" /f");
-    }
-
-    private static bool RunSchtasks(string arguments)
-    {
-        try
-        {
-            var psi = new ProcessStartInfo
-            {
-                FileName = "schtasks.exe",
-                Arguments = arguments,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            using var proc = Process.Start(psi);
-            if (proc == null) return false;
-            proc.WaitForExit(4000);
-            return proc.ExitCode == 0;
-        }
-        catch (Exception ex)
-        {
-            Logger.Instance.Debug($"schtasks execution ({arguments}): {ex.Message}");
-            return false;
-        }
     }
 
     private static string? GetExePath()

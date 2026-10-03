@@ -2,10 +2,11 @@
 **/bin/
 **/obj/
 
-# Publish output
-publish/bin/
-publish/HyprWin.App.exe
-publish/HyprWin.Core.pdb
+# Publish output (generated single-file exe and publish dir)
+/publish/
+
+# Obsidian vault (local notes, not source)
+/Hyprwin.Vault/
 
 # Installer output
 installer/

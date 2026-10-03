@@ -1,6 +1,16 @@
-# HyprWin — Hyprland-Inspired Tiling Window Manager for Windows 11
+# HyprWin — Hyprland-Inspired Tiling Window Manager for Windows
 
-A powerful, customizable tiling window manager for Windows 10/11 that brings the Hyprland experience to the Windows desktop. Built with C# / .NET 8 and WPF.
+HyprWin tiles windows on Windows 10/11 (build 22621+) with a Hyprland-style BSP / master-stack layout, workspaces, and a optional top bar. It is a C# / WPF desktop app. **It is not [hyprwin.cloud](https://hyprwin.cloud) and not ThrowTop/hyprwin.**
+
+**No-admin install.** The process runs as the logged-in user (`asInvoker`). Autostart is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. There is no `requireAdministrator` manifest and no elevated Task Scheduler task.
+
+### Publish (self-contained single-file, win-x64, current user)
+
+```powershell
+dotnet publish src\HyprWin.App\HyprWin.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
+```
+
+Run `publish\HyprWin.App.exe` as yourself. Config: `%APPDATA%\HyprWin\hyprwin.toml`.
 
 ## Features
 
@@ -129,8 +139,8 @@ A powerful, customizable tiling window manager for Windows 10/11 that brings the
 ### Workspaces & Scratchpad
 | Shortcut | Action |
 |----------|--------|
-| `SUPER + 1/2/3` | Switch to workspace 1/2/3 |
-| `SUPER + SHIFT + 1/2/3` | Move window to workspace 1/2/3 |
+| `SUPER + 1..N` | Switch to workspace 1..N (`general.workspace_count`) |
+| `SUPER + SHIFT + 1..N` | Move window to workspace 1..N |
 | `SUPER + S` | Toggle special scratchpad workspace overlay |
 | `SUPER + SHIFT + S` | Move window to special scratchpad workspace |
 
@@ -163,7 +173,7 @@ A powerful, customizable tiling window manager for Windows 10/11 that brings the
 ### System
 | Shortcut | Action |
 |----------|--------|
-| Win key (suppressed) | Start menu via top bar button |
+| Win key | Modifier only; a bare Win keypress is not swallowed (Start menu) |
 | `WIN + R` | Run dialog (passthrough) |
 | `WIN + SPACE` | Input language switch (passthrough) |
 
@@ -207,7 +217,7 @@ Available actions: `workspace_prev`, `workspace_next`, `minimize_all`, `none`
 ## Building
 
 ### Prerequisites
-- .NET 8 SDK
+- .NET 10 SDK
 - Windows 10/11 (Build 22621+)
 
 ### Build from Source
@@ -227,29 +237,7 @@ dotnet publish src\HyprWin.App\HyprWin.App.csproj -c Release -r win-x64 --self-c
 
 ## Architecture
 
-```
-src/
-├── HyprWin.App/           # WPF application (UI layer)
-│   ├── App.xaml.cs         # Entry point, orchestrates all subsystems
-│   ├── TopBarWindow        # Taskbar replacement with modular widgets
-│   ├── SystemMenuWindow    # macOS Control Center-style popup
-│   ├── SettingsWindow      # Visual configuration editor
-│   └── CalendarPopupWindow # Calendar popup for clock widget
-│
-└── HyprWin.Core/           # Core logic (no UI dependencies)
-    ├── TilingEngine         # BSP tree layout with DeferWindowPos batching
-    ├── WorkspaceManager     # Virtual workspace management
-    ├── WindowTracker        # Win32 event hooks for window lifecycle
-    ├── WindowDispatcher     # Keybind action handler (incl. robust close)
-    ├── KeyboardHook         # WH_KEYBOARD_LL global hook
-    ├── AnimationEngine      # Frame-synced window animations
-    ├── BorderRenderer       # GPU-accelerated focus border
-    ├── SystemInfoService    # Hardware metrics, media, battery, brightness
-    ├── TouchpadGestureService # Raw Input HID touchpad gesture detection
-    ├── TaskbarManager       # Native taskbar hide/show
-    ├── MonitorManager       # Multi-monitor enumeration
-    └── Configuration/       # TOML config parsing with hot-reload
-```
+See [docs/architecture.md](docs/architecture.md).
 
 ## Performance Notes
 

@@ -99,7 +99,27 @@ public sealed class TaskbarManager : IDisposable
                 Logger.Instance.Debug($"Restored taskbar: {hwnd}");
             }
 
-            // Also catch any taskbar that may have been recreated or missed
+            RestoreExplorerTaskbars();
+
+            _hiddenTaskbars.Clear();
+            _savedExStyles.Clear();
+            _isHidden = false;
+            Logger.Instance.Info("Taskbar(s) restored");
+        }
+        catch (Exception ex)
+        {
+            Logger.Instance.Error("Failed to restore taskbar", ex);
+        }
+    }
+
+    /// <summary>
+    /// Restore every Explorer taskbar, even if this instance never hid them.
+    /// Safe to call from crash and Environment.Exit paths.
+    /// </summary>
+    public static void RestoreExplorerTaskbars()
+    {
+        try
+        {
             NativeMethods.EnumWindows((hwnd, _) =>
             {
                 var sb = new StringBuilder(256);
@@ -108,7 +128,6 @@ public sealed class TaskbarManager : IDisposable
 
                 if (className is "Shell_TrayWnd" or "Shell_SecondaryTrayWnd")
                 {
-                    // Remove any layered/transparent flags we might have set
                     int exStyle = NativeMethods.GetWindowLong(hwnd, NativeMethods.GWL_EXSTYLE);
                     if ((exStyle & (int)NativeMethods.WS_EX_LAYERED) != 0)
                     {
@@ -124,24 +143,15 @@ public sealed class TaskbarManager : IDisposable
                 return true;
             }, IntPtr.Zero);
 
-            // Use synchronous SendMessage so the shell processes WM_SETTINGCHANGE
-            // before HyprWin exits — this ensures work-area reservations are refreshed.
             NativeMethods.SendMessage(NativeMethods.HWND_BROADCAST,
                 NativeMethods.WM_SETTINGCHANGE, IntPtr.Zero, IntPtr.Zero);
-
-            // Small delay then send again to catch any late-initializing shell components
             System.Threading.Thread.Sleep(100);
             NativeMethods.PostMessage(NativeMethods.HWND_BROADCAST,
                 NativeMethods.WM_SETTINGCHANGE, IntPtr.Zero, IntPtr.Zero);
-
-            _hiddenTaskbars.Clear();
-            _savedExStyles.Clear();
-            _isHidden = false;
-            Logger.Instance.Info("Taskbar(s) restored");
         }
         catch (Exception ex)
         {
-            Logger.Instance.Error("Failed to restore taskbar", ex);
+            Logger.Instance.Error("Failed to restore Explorer taskbar", ex);
         }
     }
 
@@ -162,8 +172,13 @@ public sealed class TaskbarManager : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        // Always attempt to show the taskbar on disposal — even if _isHidden is false
-        // (it may be false due to a failed HideTaskbar call at startup)
-        ShowTaskbar();
+        try
+        {
+            ShowTaskbar();
+        }
+        finally
+        {
+            RestoreExplorerTaskbars();
+        }
     }
 }

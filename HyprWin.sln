@@ -9,6 +9,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HyprWin.Core", "src\HyprWin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HyprWin.App", "src\HyprWin.App\HyprWin.App.csproj", "{68CF20A1-7068-41AB-A051-5EA108D36700}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{2C7A91B0-3E44-4D55-9C1A-8E6F0B4A7D21}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HyprWin.Core.Tests", "tests\HyprWin.Core.Tests\HyprWin.Core.Tests.csproj", "{9F3E2A11-8B5C-4D70-9E12-6A4C8D1F0B33}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -26,9 +30,14 @@ Global
 		{68CF20A1-7068-41AB-A051-5EA108D36700}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{68CF20A1-7068-41AB-A051-5EA108D36700}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{68CF20A1-7068-41AB-A051-5EA108D36700}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9F3E2A11-8B5C-4D70-9E12-6A4C8D1F0B33}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9F3E2A11-8B5C-4D70-9E12-6A4C8D1F0B33}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9F3E2A11-8B5C-4D70-9E12-6A4C8D1F0B33}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9F3E2A11-8B5C-4D70-9E12-6A4C8D1F0B33}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{87D443B5-BDCF-49E4-94CB-8DB132D9424F} = {15E6C598-8F60-4F5A-A007-2571E0841A34}
 		{68CF20A1-7068-41AB-A051-5EA108D36700} = {15E6C598-8F60-4F5A-A007-2571E0841A34}
+		{9F3E2A11-8B5C-4D70-9E12-6A4C8D1F0B33} = {2C7A91B0-3E44-4D55-9C1A-8E6F0B4A7D21}
 	EndGlobalSection
 EndGlobal
