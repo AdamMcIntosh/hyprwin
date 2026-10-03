@@ -1,16 +1,14 @@
 # HyprWin — Hyprland-Inspired Tiling Window Manager for Windows
 
-HyprWin tiles windows on Windows 10/11 (build 22621+) with a Hyprland-style BSP / master-stack layout, workspaces, and a optional top bar. It is a C# / WPF desktop app. **It is not [hyprwin.cloud](https://hyprwin.cloud) and not ThrowTop/hyprwin.**
+HyprWin tiles windows on Windows 10/11 (build 22621+) with a Hyprland-style BSP / master-stack layout, workspaces, and an optional top bar. It is a C# / WPF desktop app. **It is not [hyprwin.cloud](https://hyprwin.cloud) and not ThrowTop/hyprwin.**
 
-**No-admin install.** The process runs as the logged-in user (`asInvoker`). Autostart is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. There is no `requireAdministrator` manifest and no elevated Task Scheduler task.
+## Install
 
-### Publish (self-contained single-file, win-x64, current user)
+Download `HyprWin.App.exe` from the [latest GitHub Release](https://github.com/AdamMcIntosh/hyprwin/releases/latest). Run it as the logged-in user — no Administrator prompt.
 
-```powershell
-dotnet publish src\HyprWin.App\HyprWin.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
-```
+**No-admin.** The process is `asInvoker`. Autostart is `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`. There is no elevated Task Scheduler task.
 
-Run `publish\HyprWin.App.exe` as yourself. Config: `%APPDATA%\HyprWin\hyprwin.toml`.
+Config: `%APPDATA%\HyprWin\hyprwin.toml`.
 
 ## Features
 
@@ -230,10 +228,7 @@ dotnet build src\HyprWin.App\HyprWin.App.csproj -c Release
 dotnet publish src\HyprWin.App\HyprWin.App.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o publish
 ```
 
-### Build Installer
-```powershell
-.\publish\build-installer.ps1
-```
+Run `publish\HyprWin.App.exe` as yourself. Tagged `v*` pushes build this same command in GitHub Actions and attach the exe to the release.
 
 ## Architecture
 
@@ -256,4 +251,4 @@ Inspired by [Hyprland](https://hyprland.org/) and [Komorebi](https://github.com/
 
 ## License
 
-MIT License
+[MIT](LICENSE)
